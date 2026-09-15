@@ -1,0 +1,91 @@
+package com.fincore.CommunicationService.config;
+
+import java.io.IOException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
+
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.security.KeyStore;
+
+/**
+ * <p>HTTP Configuration.</p>
+ * <p>Wraps the proven HttpURLConnection (which easily bypasses UAT Proxies and SSL issues)
+ * inside the modern Spring RestClient to enable Multipart Attachment streaming.</p>
+ */
+@Slf4j
+@Configuration
+public class RestClientConfig {
+
+    @Value("${ssl.trust-store-password}")
+
+    private String trustStorePassword;
+
+    @Bean
+    public RestClient restClient(RestClient.Builder builder) {
+        log.info("Initializing RestClient with legacy HttpURLConnection bindings for strict UAT SSL bypass.");
+
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory() {
+            @Override
+            protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
+                // Strict timeouts to prevent Virtual Thread starvation
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(5000);
+
+                // Re-injecting the exact SSL and Hostname Bypass from your working baseline
+                if (connection instanceof HttpsURLConnection httpsConnection) {
+                    try {
+                        KeyStore trustStore =
+                                KeyStore.getInstance(KeyStore.getDefaultType());
+
+                        ClassPathResource resource =
+                                new ClassPathResource(
+                                        "certs/truststore.jks");
+
+                        try (InputStream inputStream =
+                                     resource.getInputStream()) {
+
+                            trustStore.load(
+                                    inputStream,
+                                    trustStorePassword.toCharArray());
+                        }
+
+                        TrustManagerFactory tmf =
+                                TrustManagerFactory.getInstance(
+                                        TrustManagerFactory.getDefaultAlgorithm());
+
+                        tmf.init(trustStore);
+
+                        SSLContext sslContext =
+                                SSLContext.getInstance("TLS");
+
+                        sslContext.init(
+                                null,
+                                tmf.getTrustManagers(),
+                                null);
+
+                        httpsConnection.setSSLSocketFactory(
+                                sslContext.getSocketFactory());
+
+                        httpsConnection.setSSLSocketFactory(sslContext.getSocketFactory());
+                        httpsConnection.setHostnameVerifier((hostname, session) -> true);
+
+                    } catch (Exception e) {
+                        log.error("Failed to configure SSL truststore.", e);
+                    }
+                }
+                super.prepareConnection(connection, httpMethod);
+            }
+        };
+
+        return builder.requestFactory(factory).build();
+    }
+}
