@@ -1,0 +1,1 @@
+keytool -importcert -alias bank-api -file src/main/resources/certs/bank-api.pem -keystore src/main/resources/certs/truststore.jks
