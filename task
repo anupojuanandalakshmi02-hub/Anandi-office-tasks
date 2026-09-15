@@ -1,1 +1,64 @@
-Hi
+package com.fincore.CommunicationService.config;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
+
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+
+/**
+ * <p>HTTP Configuration.</p>
+ * <p>Wraps the proven HttpURLConnection (which easily bypasses UAT Proxies and SSL issues)
+ * inside the modern Spring RestClient to enable Multipart Attachment streaming.</p>
+ */
+@Slf4j
+@Configuration
+public class RestClientConfig {
+
+    @Bean
+    public RestClient restClient(RestClient.Builder builder) {
+        log.info("Initializing RestClient with legacy HttpURLConnection bindings for strict UAT SSL bypass.");
+
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory() {
+            @Override
+            protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
+                // Strict timeouts to prevent Virtual Thread starvation
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(5000);
+
+                // Re-injecting the exact SSL and Hostname Bypass from your working baseline
+                if (connection instanceof HttpsURLConnection) {
+                    HttpsURLConnection httpsConnection = (HttpsURLConnection) connection;
+                    try {
+                        TrustManager[] trustAllCerts = new TrustManager[]{
+                                new X509TrustManager() {
+                                    public X509Certificate[] getAcceptedIssuers() { return null; }
+                                    public void checkClientTrusted(X509Certificate[] certs, String authType) {}
+                                    public void checkServerTrusted(X509Certificate[] certs, String authType) {}
+                                }
+                        };
+                        SSLContext sc = SSLContext.getInstance("TLS");
+                        sc.init(null, trustAllCerts, new SecureRandom());
+
+                        httpsConnection.setSSLSocketFactory(sc.getSocketFactory());
+                        httpsConnection.setHostnameVerifier((hostname, session) -> true);
+                    } catch (Exception e) {
+                        log.error("Failed to inject SSL bypass into connection.", e);
+                    }
+                }
+                super.prepareConnection(connection, httpMethod);
+            }
+        };
+
+        return builder.requestFactory(factory).build();
+    }
+}
