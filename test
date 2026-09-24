@@ -1,1 +1,5 @@
-hhh
+@KafkaListener(topics = "airflow-events", groupId = "Airflow_ETL", properties = {
+			"spring.json.value.default.type=com.fincore.process_status_service.dto.AirflowDagEvent" })
+
+
+i have a kafka listener where it is listening for multiple different messages differentiated by key now that i want to map the incomming kafka event to different dto how can i do that?
