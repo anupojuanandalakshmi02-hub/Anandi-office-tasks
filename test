@@ -1,3 +1,34 @@
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class AirflowEventConsumer {
+
+	private final ProcessStatusService processStatusService;
+
+	@KafkaListener(topics = "airflow-events", groupId = "Airflow_ETL", properties = {
+			"spring.json.value.default.type=com.fincore.process_status_service.dto.AirflowDagEvent" })
+	public void consume(AirflowDagEvent dagEvent) {
+
+		log.info("Received Airflow event : {}", dagEvent);
+		
+		if(String.valueOf(Constants.WAITING_FOR_APPROVAL).equals(dagEvent.getStatus())) {
+			processStatusService.handleAirflowEvent(dagEvent);
+		}
+		
+		processStatusService.sendProcessStatusUpdates();
+	}
+}
+
+
+This is my consumer file where it listens to this topic "airflow-events" previously we used to have only type but now it was sending another type of message also 
+so the messages are differentiated wwith key.
+the issue is back then there used to be only event so default we are mapping to only one dto in the properties but now we want to map the second message coming with another dto 
+how do i do that ? 
+
+
+
+
+
 package com.fincore.process_status_service.config;
 
 import lombok.extern.slf4j.Slf4j;
@@ -61,3 +92,26 @@ public class KafkaConsumerConfig {
         return factory;
     }
 }
+
+This is my kafka consumer config file 
+
+
+
+spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.StringSerializer
+spring.kafka.producer.value-serializer=org.springframework.kafka.support.serializer.JsonSerializer
+#
+## Optional: Ensures type information is handled correctly in the DLT
+#spring.kafka.producer.properties.spring.json.add.type.headers=true
+
+
+spring.kafka.consumer.key-deserializer=org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+spring.kafka.consumer.value-deserializer=org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+spring.kafka.consumer.properties.spring.deserializer.key.delegate.class=org.apache.kafka.common.serialization.StringDeserializer
+spring.kafka.consumer.properties.spring.deserializer.value.delegate.class=org.springframework.kafka.support.serializer.JsonDeserializer
+spring.kafka.consumer.properties.spring.json.trusted.packages=*
+spring.kafka.consumer.properties.spring.json.use.type.headers=false
+spring.kafka.consumer.enable-auto-commit=false
+spring.kafka.listener.ack-mode = manual
+
+
+These are the properties related to kafka in my application.properties file 
